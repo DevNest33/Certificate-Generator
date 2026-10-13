@@ -1,5 +1,5 @@
 import { fontStack } from './lib/fonts'
-import { CAP_CENTER, LINE_HEIGHT } from './lib/layout'
+import { CAP_CENTER, LINE_HEIGHT, type LaidOutText } from './lib/layout'
 import type { FieldId, TemplateConfig, TextAlign, TextElement } from './types'
 
 /** Pixel size of public/certificate-template.png. Defaults below are measured in these pixels. */
@@ -11,17 +11,15 @@ export const TEMPLATE: TemplateConfig = {
   referenceSrc: `${import.meta.env.BASE_URL}certificate-reference.png`,
   designWidth: DESIGN_WIDTH,
   designHeight: DESIGN_HEIGHT,
-  qrArea: { x: 630 / DESIGN_WIDTH, y: 516 / DESIGN_HEIGHT, width: 130 / DESIGN_WIDTH, height: 130 / DESIGN_HEIGHT },
+  qrArea: { x: 643 / DESIGN_WIDTH, y: 528 / DESIGN_HEIGHT, width: 127 / DESIGN_WIDTH, height: 127 / DESIGN_HEIGHT },
   qrPatchSource: { x: 830 / DESIGN_WIDTH, y: 350 / DESIGN_HEIGHT },
   pageWidthMm: 297,
 }
 
-interface ElementSpec {
-  id: FieldId
-  name: string
+interface PlaceSpec {
   /** Left edge, center or right edge of the box, depending on `align`. */
   anchorX: number
-  /** Baseline the text should sit on, e.g. the baseline of a printed label. */
+  /** Baseline the text should sit on. */
   baseline: number
   width: number
   height: number
@@ -34,12 +32,11 @@ interface ElementSpec {
   lines?: number
 }
 
-function element(spec: ElementSpec): TextElement {
+function place(spec: PlaceSpec): LaidOutText {
   const extra = (((spec.lines ?? 1) - 1) * spec.fontSize * LINE_HEIGHT) / 2
   const top = spec.baseline + extra - spec.height / 2 - CAP_CENTER * spec.fontSize
   return {
-    id: spec.id,
-    name: spec.name,
+    id: 'text',
     x: spec.anchorX / DESIGN_WIDTH,
     y: top / DESIGN_HEIGHT,
     width: spec.width / DESIGN_WIDTH,
@@ -51,37 +48,80 @@ function element(spec: ElementSpec): TextElement {
     color: spec.color,
     letterSpacing: 0,
     shrinkToFit: true,
-    locked: false,
   }
 }
 
+function element(spec: PlaceSpec & { id: FieldId; name: string }): TextElement {
+  return { ...place(spec), id: spec.id, name: spec.name, locked: false }
+}
+
+export interface StaticLine extends LaidOutText {
+  text: string
+}
+
 /**
- * Initial field layout, measured on the line-free template (1024×724).
- * The background prints neither the metadata labels nor the old underlines, so the name, the course
- * and the three metadata lines are each centered. Start date, certificate number and duration include
- * their labels in the drawn text.
+ * Lines printed on every certificate. They are not recipient fields.
+ * Baselines are on the blank template, which sits 5px higher than the filled reference.
+ */
+export const STATIC_LINES: StaticLine[] = [
+  {
+    ...place({
+      anchorX: 512,
+      baseline: 333,
+      width: 720,
+      height: 32,
+      align: 'center',
+      font: 'Segoe UI',
+      fontSize: 24,
+      fontWeight: 400,
+      color: '#1a1a1a',
+    }),
+    id: 'intro',
+    text: 'for successfully completing a Course about',
+  },
+  {
+    ...place({
+      anchorX: 512,
+      baseline: 454,
+      width: 420,
+      height: 32,
+      align: 'center',
+      font: 'Segoe UI',
+      fontSize: 27,
+      fontWeight: 400,
+      color: '#808080',
+    }),
+    id: 'certifiedLabel',
+    text: 'Certified No.',
+  },
+]
+
+/**
+ * Initial field layout, measured against the filled reference (1024×724) and shifted up 5px
+ * so the gaps match the blank template's header. The issue date stays on the printed rule.
+ * Font sizes are the ones whose rendered width matches that reference line.
  */
 export const DEFAULT_ELEMENTS: TextElement[] = [
   element({
     id: 'recipientName',
     name: 'Recipient Name',
     anchorX: 512,
-    baseline: 286,
-    width: 640,
-    height: 48,
+    baseline: 279,
+    width: 700,
+    height: 40,
     align: 'center',
     font: 'Arial',
     fontSize: 30,
     fontWeight: 400,
-    color: '#5a2728',
+    color: '#5c3030',
   }),
   element({
     id: 'courseName',
     name: 'Course Name',
     anchorX: 512,
-    baseline: 402,
-    width: 700,
-    height: 40,
+    baseline: 384,
+    width: 760,
+    height: 36,
     align: 'center',
     font: 'Segoe UI',
     fontSize: 26,
@@ -92,53 +132,52 @@ export const DEFAULT_ELEMENTS: TextElement[] = [
     id: 'courseStartDate',
     name: 'Course Start Date',
     anchorX: 512,
-    baseline: 436,
+    baseline: 415,
     width: 700,
-    height: 26,
+    height: 20,
     align: 'center',
     font: 'Segoe UI',
     fontSize: 16,
     fontWeight: 400,
-    color: '#222326',
+    color: '#222222',
   }),
   element({
     id: 'certificateNumber',
     name: 'Certificate Number',
     anchorX: 512,
-    baseline: 464,
-    width: 700,
-    height: 52,
-    lines: 2,
+    baseline: 489,
+    width: 420,
+    height: 30,
     align: 'center',
     font: 'Segoe UI',
-    fontSize: 17,
+    fontSize: 26,
     fontWeight: 400,
-    color: '#7a7a7b',
+    color: '#1a1a1a',
   }),
   element({
     id: 'courseDuration',
     name: 'Course Duration',
     anchorX: 512,
-    baseline: 510,
+    baseline: 512,
     width: 700,
-    height: 26,
+    height: 18,
     align: 'center',
     font: 'Segoe UI',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 700,
-    color: '#0e3981',
+    color: '#286090',
   }),
   element({
     id: 'issueDate',
     name: 'Issue Date',
-    anchorX: 904.5,
-    baseline: 592,
-    width: 154,
-    height: 28,
+    anchorX: 908,
+    baseline: 590,
+    width: 160,
+    height: 26,
     align: 'center',
     font: 'Segoe UI',
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: 400,
-    color: '#1d1e22',
+    color: '#1a1a1a',
   }),
 ]

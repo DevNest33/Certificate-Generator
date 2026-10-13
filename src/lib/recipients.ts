@@ -67,20 +67,19 @@ export function effectiveIssueDate(recipient: Recipient, globalIssueDate: string
 }
 
 /**
- * The new template does not print these labels, so the drawn line includes them.
+ * The template does not print these labels, so the drawn line includes them.
+ * "Certified No." is a fixed line of its own; the number is drawn underneath with no prefix.
  * The editor still edits the raw value; `stripDrawnLabel` turns the drawn placeholder back into one.
  */
 const DRAWN_LABEL: Partial<Record<FieldId, string>> = {
   courseStartDate: 'Course Start Date:',
-  certificateNumber: 'Certificate Number:',
-  courseDuration: 'Course Duration:',
+  courseDuration: 'Course Duration',
 }
 
 function drawLabeled(id: FieldId, value: string): string {
   const label = DRAWN_LABEL[id]
   if (!label || !value) return value
-  // The number sits on its own line under the label, as on the reference certificate.
-  return id === 'certificateNumber' ? `${label}\n${value}` : `${label} ${value}`
+  return `${label} ${value}`
 }
 
 export function stripDrawnLabel(id: FieldId, drawn: string): string {

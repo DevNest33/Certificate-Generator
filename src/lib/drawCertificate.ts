@@ -1,3 +1,4 @@
+import { STATIC_LINES } from '../defaultLayout'
 import type { FieldValues, TemplateConfig, TextElement } from '../types'
 import { graphemes, layoutText, type TextRun } from './layout'
 
@@ -37,6 +38,9 @@ export function drawCertificate(ctx: CanvasRenderingContext2D, scene: Certificat
     )
   }
 
+  for (const line of STATIC_LINES) {
+    drawTextRun(ctx, layoutText(line, line.text, width, height, config.designWidth))
+  }
   for (const el of scene.elements) {
     drawTextRun(ctx, layoutText(el, scene.values[el.id] ?? '', width, height, config.designWidth))
   }

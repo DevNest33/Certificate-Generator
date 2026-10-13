@@ -42,21 +42,19 @@ import type {
 
 /**
  * Restores a stored layout, filling in any properties missing from older sessions.
- * Layouts saved against the previous template are left-aligned value slots, so they are discarded.
+ * Left-aligned value slots belong to the previous template and are discarded.
  */
 function reviveLayout(stored: unknown): TextElement[] {
   if (!Array.isArray(stored)) return DEFAULT_ELEMENTS
   const startDate = stored.find((s) => s?.id === 'courseStartDate')
-  const certificateNumber = stored.find((s) => s?.id === 'certificateNumber')
-  // Left-aligned slots belong to the labeled template. A short box is the one-line number.
-  if (startDate?.align === 'left' || (certificateNumber?.height ?? 0) < 0.055) return DEFAULT_ELEMENTS
+  if (startDate?.align === 'left') return DEFAULT_ELEMENTS
   return DEFAULT_ELEMENTS.map((d) => ({ ...d, ...(stored.find((s) => s?.id === d.id) ?? {}) }))
 }
 
 const DEFAULT_VIEW: EditorView = { zoom: 1, showGrid: false, showBounds: true, showReference: false }
 
 export default function App() {
-  const [elements, setElements] = useSessionState<TextElement[]>('certgen.v3.layout', DEFAULT_ELEMENTS, reviveLayout)
+  const [elements, setElements] = useSessionState<TextElement[]>('certgen.v4.layout', DEFAULT_ELEMENTS, reviveLayout)
   const [recipients, setRecipients] = useSessionState<Recipient[]>('certgen.v1.recipients', [])
   const [globalIssueDate, setGlobalIssueDate] = useSessionState('certgen.v1.issueDate', todayIso)
   const [dateFormat, setDateFormat] = useSessionState<DateFormat>('certgen.v1.dateFormat', 'YYYY-MM-DD')

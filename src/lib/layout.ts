@@ -1,4 +1,4 @@
-import type { FieldId, TextAlign, TextElement } from '../types'
+import type { TextAlign, TextElement } from '../types'
 
 /**
  * Distance from the baseline to the vertical middle of capital letters, as a fraction of the font size.
@@ -22,8 +22,24 @@ export interface TextLine {
   baseline: number
 }
 
+/** Geometry and style shared by recipient fields and the fixed lines drawn on every certificate. */
+export type LaidOutText = Pick<
+  TextElement,
+  | 'x'
+  | 'y'
+  | 'width'
+  | 'height'
+  | 'align'
+  | 'fontFamily'
+  | 'fontSize'
+  | 'fontWeight'
+  | 'color'
+  | 'letterSpacing'
+  | 'shrinkToFit'
+> & { id: string }
+
 export interface TextRun {
-  id: FieldId
+  id: string
   text: string
   font: string
   color: string
@@ -42,7 +58,7 @@ export function anchorFraction(align: TextAlign): number {
 }
 
 /** The element's box in pixels on a certificate rendered at `width` × `height`. */
-export function elementBox(el: TextElement, width: number, height: number): PixelBox {
+export function elementBox(el: Pick<LaidOutText, 'x' | 'y' | 'width' | 'height' | 'align'>, width: number, height: number): PixelBox {
   const boxWidth = el.width * width
   return {
     left: el.x * width - boxWidth * anchorFraction(el.align),
@@ -96,7 +112,7 @@ function measurer(): CanvasRenderingContext2D {
  * Positions one text element on a certificate rendered at `width` × `height`.
  * Shrink-to-fit is computed at the template's design size, so every render size shrinks text identically.
  */
-export function layoutText(el: TextElement, text: string, width: number, height: number, designWidth: number): TextRun {
+export function layoutText(el: LaidOutText, text: string, width: number, height: number, designWidth: number): TextRun {
   const ctx = measurer()
   const scale = width / designWidth
   const box = elementBox(el, width, height)
