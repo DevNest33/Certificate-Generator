@@ -1,8 +1,10 @@
 import { ChevronLeft, ChevronRight, CircleAlert, CircleCheck, TriangleAlert, Users } from 'lucide-react'
-import type { Recipient, ValidationIssue } from '../types'
+import { recipientLabel } from '../lib/recipients'
+import type { Preset, Recipient, ValidationIssue } from '../types'
 import { Button, IconButton, SelectInput, Tooltip } from './ui'
 
 interface Props {
+  preset: Preset
   recipients: Recipient[]
   current: Recipient | null
   issues: ValidationIssue[]
@@ -10,7 +12,7 @@ interface Props {
   onManage: () => void
 }
 
-export function RecipientPicker({ recipients, current, issues, onPick, onManage }: Props) {
+export function RecipientPicker({ preset, recipients, current, issues, onPick, onManage }: Props) {
   if (!recipients.length || !current) {
     return (
       <div className="flex items-center gap-3 border-t border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-500">
@@ -45,8 +47,7 @@ export function RecipientPicker({ recipients, current, issues, onPick, onManage 
       >
         {recipients.map((r, i) => (
           <option key={r.id} value={r.id}>
-            {i + 1}. {r.recipientName || '(no name)'}
-            {r.certificateNumber ? `  ·  ${r.certificateNumber}` : ''}
+            {i + 1}. {recipientLabel(preset, r)}
           </option>
         ))}
       </SelectInput>

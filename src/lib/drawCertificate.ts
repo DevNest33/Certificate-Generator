@@ -1,11 +1,12 @@
-import { STATIC_LINES } from '../defaultLayout'
-import type { FieldValues, TemplateConfig, TextElement } from '../types'
+import type { FieldValues, StaticLine, TemplateConfig, TextElement } from '../types'
 import { graphemes, layoutText, type TextRun } from './layout'
 
 export interface CertificateScene {
   template: HTMLImageElement
   config: TemplateConfig
   elements: TextElement[]
+  /** Lines that are part of the design and print unchanged. */
+  staticLines: StaticLine[]
   values: FieldValues
   hideQr: boolean
 }
@@ -21,7 +22,8 @@ export function drawCertificate(ctx: CanvasRenderingContext2D, scene: Certificat
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(template, 0, 0, width, height)
 
-  if (scene.hideQr) {
+  // Only designs that carry a QR-like graphic can hide one.
+  if (scene.hideQr && config.qrArea && config.qrPatchSource) {
     const { qrArea: area, qrPatchSource: source } = config
     const iw = template.naturalWidth
     const ih = template.naturalHeight
@@ -38,7 +40,7 @@ export function drawCertificate(ctx: CanvasRenderingContext2D, scene: Certificat
     )
   }
 
-  for (const line of STATIC_LINES) {
+  for (const line of scene.staticLines) {
     drawTextRun(ctx, layoutText(line, line.text, width, height, config.designWidth))
   }
   for (const el of scene.elements) {

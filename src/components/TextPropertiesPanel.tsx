@@ -14,8 +14,7 @@ import { FONT_OPTIONS, FONT_WEIGHTS, fontFamilies, renderedFontFamily } from '..
 import { dateInputType, isValidIsoDate } from '../lib/dates'
 import { stripDrawnLabel } from '../lib/recipients'
 import { centerHorizontally, realign } from '../lib/layout'
-import type { DateFormat, FieldId, Recipient, RecipientTextKey, TemplateConfig, TextAlign, TextElement } from '../types'
-import { IssueDateControl } from './IssueDateControl'
+import type { FieldId, FieldSpec, FieldValues, Preset, Recipient, TemplateConfig, TextAlign, TextElement } from '../types'
 import { Button, Field, IconButton, NumberInput, Segmented, SelectInput, Switch, TextInput, inputClass } from './ui'
 
 const ALIGN_OPTIONS: { value: TextAlign; label: string; icon: typeof TextAlignStart }[] = [
@@ -25,18 +24,17 @@ const ALIGN_OPTIONS: { value: TextAlign; label: string; icon: typeof TextAlignSt
 ]
 
 interface Props {
+  preset: Preset
   elements: TextElement[]
   selected: TextElement | null
   config: TemplateConfig
   recipient: Recipient | null
   placeholder: string
-  globalIssueDate: string
-  dateFormat: DateFormat
   onSelect: (id: FieldId) => void
   onChange: (id: FieldId, patch: Partial<TextElement>) => void
   onResetPosition: (id: FieldId) => void
-  onRecipientChange: (id: string, patch: Partial<Recipient>) => void
-  onAddRecipient: (values: Partial<Recipient>) => void
+  onRecipientChange: (id: string, field: FieldId, value: string) => void
+  onAddRecipient: (values: FieldValues) => void
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -48,14 +46,19 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
+const SOURCE_LABEL: Record<FieldSpec['source'], string> = {
+  variable: 'From your data',
+  fixed: 'Set once in the preset',
+  template: 'Built from other fields',
+}
+
 export function TextPropertiesPanel({
+  preset,
   elements,
   selected,
   config,
   recipient,
   placeholder,
-  globalIssueDate,
-  dateFormat,
   onSelect,
   onChange,
   onResetPosition,
@@ -88,6 +91,7 @@ export function TextPropertiesPanel({
   }
 
   const el = selected
+  const spec = preset.fields.find((f) => f.id === el.id)
   const update = (patch: Partial<TextElement>) => onChange(el.id, patch)
   const W = config.designWidth
   const H = config.designHeight
@@ -100,7 +104,7 @@ export function TextPropertiesPanel({
       <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold text-slate-900">{el.name}</h2>
-          <p className="text-xs text-slate-500">Text field</p>
+          <p className="text-xs text-slate-500">{spec ? SOURCE_LABEL[spec.source] : 'Text field'}</p>
         </div>
         <IconButton
           label={el.locked ? 'Unlock position' : 'Lock position'}
@@ -113,11 +117,9 @@ export function TextPropertiesPanel({
 
       <Section title="Content">
         <ContentEditor
-          field={el.id}
+          spec={spec}
           recipient={recipient}
           placeholder={placeholder}
-          globalIssueDate={globalIssueDate}
-          dateFormat={dateFormat}
           onRecipientChange={onRecipientChange}
           onAddRecipient={onAddRecipient}
         />
@@ -220,78 +222,70 @@ export function TextPropertiesPanel({
   )
 }
 
-const TEXT_KEYS: Record<Exclude<FieldId, 'issueDate'>, RecipientTextKey> = {
-  recipientName: 'recipientName',
-  courseName: 'courseName',
-  courseStartDate: 'courseStartDate',
-  certificateNumber: 'certificateNumber',
-  courseDuration: 'courseDuration',
-}
-
 function ContentEditor({
-  field,
+  spec,
   recipient,
   placeholder,
-  globalIssueDate,
-  dateFormat,
   onRecipientChange,
   onAddRecipient,
 }: {
-  field: FieldId
+  spec: FieldSpec | undefined
   recipient: Recipient | null
   placeholder: string
-  globalIssueDate: string
-  dateFormat: DateFormat
-  onRecipientChange: (id: string, patch: Partial<Recipient>) => void
-  onAddRecipient: (values: Partial<Recipient>) => void
+  onRecipientChange: (id: string, field: FieldId, value: string) => void
+  onAddRecipient: (values: FieldValues) => void
 }) {
-  // Without a recipient the same inputs are rendered, so focus stays put when the first keystroke adds one.
-  const edit = (patch: Partial<Recipient>) => (recipient ? onRecipientChange(recipient.id, patch) : onAddRecipient(patch))
-  const who = recipient?.recipientName || 'this recipient'
-  const hint = recipient ? `Editing ${who}'s certificate.` : 'Typing here adds your first recipient.'
+  if (!spec) {
+    return <p className="text-xs text-slate-500">This box has no matching field in the preset.</p>
+  }
 
-  if (field === 'issueDate') {
+  if (spec.source === 'fixed') {
     return (
-      <Field
-        label="Issue date"
-        group
-        hint={
-          recipient
-            ? 'Follows the global issue date unless you set an override.'
-            : 'Follows the global issue date. Setting an override adds your first recipient.'
-        }
-      >
-        <IssueDateControl
-          override={recipient?.issueDateOverride ?? null}
-          globalIssueDate={globalIssueDate}
-          dateFormat={dateFormat}
-          onChange={(issueDateOverride) => edit({ issueDateOverride })}
+      <Field label={spec.name} hint="The same on every certificate from this design. Change it under Presets.">
+        <TextInput value={spec.value ?? ''} readOnly disabled />
+      </Field>
+    )
+  }
+
+  if (spec.source === 'template') {
+    return (
+      <Field label={spec.name} hint="Assembled from other fields. Edit the pattern under Presets.">
+        <textarea
+          value={placeholder}
+          readOnly
+          rows={3}
+          className={`${inputClass} resize-none bg-slate-50 text-slate-500`}
         />
       </Field>
     )
   }
 
-  const key = TEXT_KEYS[field]
-  const value = recipient?.[key] ?? ''
-  if (key === 'courseStartDate') {
+  // Without a recipient the same inputs are rendered, so focus stays put when the first keystroke adds one.
+  const edit = (value: string) =>
+    recipient ? onRecipientChange(recipient.id, spec.id, value) : onAddRecipient({ [spec.id]: value })
+  const value = recipient?.values[spec.id] ?? ''
+  const hint = recipient ? 'Editing the certificate being previewed.' : 'Typing here adds your first row.'
+
+  if (spec.kind === 'date') {
     const invalid = value !== '' && !isValidIsoDate(value)
     return (
-      <Field label="Course start date" hint={hint}>
+      <Field label={spec.name} hint={hint}>
         <input
           type={dateInputType(value)}
           value={value}
-          onChange={(e) => edit({ courseStartDate: e.target.value })}
+          onChange={(e) => edit(e.target.value)}
           className={`${inputClass} ${invalid ? 'border-red-400 text-red-700' : ''}`}
         />
       </Field>
     )
   }
+
   return (
-    <Field label="Text" hint={hint}>
+    <Field label={spec.name} hint={hint}>
       <TextInput
         value={value}
-        placeholder={recipient ? undefined : stripDrawnLabel(field, placeholder)}
-        onChange={(e) => edit({ [key]: e.target.value })}
+        placeholder={recipient ? undefined : stripDrawnLabel(spec, placeholder)}
+        onChange={(e) => edit(e.target.value)}
       />
     </Field>
   )

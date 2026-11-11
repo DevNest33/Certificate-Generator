@@ -1,17 +1,20 @@
 import { CircleAlert, FileArchive, FileDown, ImageDown, ShieldCheck } from 'lucide-react'
 import type { ExportJob } from '../hooks/useExporter'
-import type { Recipient } from '../types'
-import { Button } from './ui'
+import { recipientLabel } from '../lib/recipients'
+import type { BatchFormat, Preset, Recipient } from '../types'
+import { Button, Segmented } from './ui'
 
 interface Props {
+  preset: Preset
   current: Recipient | null
   currentBlocked: string | null
   total: number
   invalidCount: number
-  globalDateMissing: boolean
   job: ExportJob | null
+  batchFormat: BatchFormat
   pageLabel: string
   pixelLabel: string
+  onBatchFormatChange: (format: BatchFormat) => void
   onExportPdf: () => void
   onExportPng: () => void
   onExportZip: () => void
@@ -20,14 +23,16 @@ interface Props {
 }
 
 export function ExportPanel({
+  preset,
   current,
   currentBlocked,
   total,
   invalidCount,
-  globalDateMissing,
   job,
+  batchFormat,
   pageLabel,
   pixelLabel,
+  onBatchFormatChange,
   onExportPdf,
   onExportPng,
   onExportZip,
@@ -35,7 +40,7 @@ export function ExportPanel({
   onReview,
 }: Props) {
   const busy = job !== null
-  const batchBlocked = total === 0 || invalidCount > 0 || globalDateMissing
+  const batchBlocked = total === 0 || invalidCount > 0
   const percent = job ? Math.round((job.done / job.total) * 100) : 0
 
   return (
@@ -44,7 +49,7 @@ export function ExportPanel({
 
       <div className="space-y-2">
         <p className="truncate text-xs text-slate-500">
-          Current: <span className="font-medium text-slate-700">{current?.recipientName || (current ? '(no name)' : 'none')}</span>
+          Current: <span className="font-medium text-slate-700">{current ? recipientLabel(preset, current) : 'none'}</span>
         </p>
         <div className="grid grid-cols-2 gap-2">
           <Button
@@ -70,6 +75,18 @@ export function ExportPanel({
       </div>
 
       <div className="space-y-2 border-t border-slate-100 pt-4">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-slate-600">Batch format</span>
+          <Segmented
+            value={batchFormat}
+            disabled={busy}
+            onChange={onBatchFormatChange}
+            options={[
+              { value: 'png', label: 'PNG images', icon: ImageDown },
+              { value: 'pdf', label: 'PDF files', icon: FileDown },
+            ]}
+          />
+        </div>
         <Button
           variant="primary"
           icon={FileArchive}
@@ -80,7 +97,9 @@ export function ExportPanel({
         >
           Download all as ZIP{total ? ` (${total})` : ''}
         </Button>
-        <p className="text-xs text-slate-500">One PDF per recipient, bundled in a single ZIP file.</p>
+        <p className="text-xs text-slate-500">
+          One {batchFormat === 'pdf' ? 'PDF' : 'PNG'} per certificate, bundled in a single ZIP file.
+        </p>
 
         {job?.kind === 'zip' && (
           <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3" role="status">
@@ -97,18 +116,15 @@ export function ExportPanel({
           </div>
         )}
 
-        {!busy && total > 0 && (invalidCount > 0 || globalDateMissing) && (
+        {!busy && total > 0 && invalidCount > 0 && (
           <div className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2.5 text-xs text-red-700">
             <CircleAlert className="mt-px size-3.5 shrink-0" />
             <div>
-              {globalDateMissing
-                ? 'Set the global issue date before exporting.'
-                : `${invalidCount} ${invalidCount === 1 ? 'recipient has' : 'recipients have'} errors to fix before exporting all.`}{' '}
-              {!globalDateMissing && (
-                <button type="button" className="font-medium underline" onClick={onReview}>
-                  Review
-                </button>
-              )}
+              {invalidCount} {invalidCount === 1 ? 'certificate has' : 'certificates have'} errors to fix before
+              exporting all.{' '}
+              <button type="button" className="font-medium underline" onClick={onReview}>
+                Review
+              </button>
             </div>
           </div>
         )}

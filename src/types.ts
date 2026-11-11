@@ -1,15 +1,10 @@
-export type FieldId =
-  | 'recipientName'
-  | 'courseName'
-  | 'courseStartDate'
-  | 'certificateNumber'
-  | 'courseDuration'
-  | 'issueDate'
+/** Field ids are declared by each preset, so they are plain strings rather than a fixed union. */
+export type FieldId = string
 
 export type TextAlign = 'left' | 'center' | 'right'
 
 /**
- * A variable text field drawn on top of the template.
+ * A text box drawn on top of the template.
  * Geometry is normalized: `x` and `width` are fractions of the template width,
  * `y` and `height` are fractions of the template height.
  */
@@ -33,7 +28,20 @@ export interface TextElement {
   letterSpacing: number
   /** Reduce the font size when the text is wider than the box. */
   shrinkToFit: boolean
+  /** Break long text onto more lines at the box width instead of shrinking it. */
+  wrap?: boolean
   locked: boolean
+}
+
+/** Geometry and style shared by drawn fields and the fixed lines printed on every certificate. */
+export type LaidOutText = Pick<
+  TextElement,
+  'x' | 'y' | 'width' | 'height' | 'align' | 'fontFamily' | 'fontSize' | 'fontWeight' | 'color' | 'letterSpacing' | 'shrinkToFit' | 'wrap'
+> & { id: string }
+
+/** A line that is part of the design and prints unchanged on every certificate. */
+export interface StaticLine extends LaidOutText {
+  text: string
 }
 
 export interface NormalizedRect {
@@ -44,32 +52,77 @@ export interface NormalizedRect {
 }
 
 export interface TemplateConfig {
-  src: string
-  referenceSrc: string
   /** Pixel size the template artwork was designed at. Font sizes are expressed at this width. */
   designWidth: number
   designHeight: number
-  /** Area covered by the decorative QR-like graphic. */
-  qrArea: NormalizedRect
+  /** Area covered by a decorative QR-like graphic, when the design has one. */
+  qrArea?: NormalizedRect
   /** Top-left corner of a blank area of the same size, copied over the QR graphic when it is hidden. */
-  qrPatchSource: { x: number; y: number }
+  qrPatchSource?: { x: number; y: number }
   /** PDF page width in millimetres. The page height follows the template aspect ratio. */
   pageWidthMm: number
 }
 
-export interface Recipient {
-  id: string
-  recipientName: string
-  courseName: string
-  /** ISO `YYYY-MM-DD`. Empty when unknown. */
-  courseStartDate: string
-  certificateNumber: string
-  courseDuration: string
-  /** ISO `YYYY-MM-DD`. `null` means the recipient uses the global issue date. */
-  issueDateOverride: string | null
+/** Where a field's text comes from. */
+export type FieldSource =
+  /** Supplied per certificate, from the pasted or imported data. */
+  | 'variable'
+  /** Typed once into the preset and printed on every certificate from it. */
+  | 'fixed'
+  /** Built from `pattern`, interpolating `{fieldId}` placeholders. */
+  | 'template'
+
+/** How a field's raw value is turned into printed text. */
+export type FieldKind = 'text' | 'date' | 'duration'
+
+/**
+ * What a field is, independent of where it is drawn.
+ * A field with no matching element only feeds `template` patterns.
+ */
+export interface FieldSpec {
+  id: FieldId
+  name: string
+  source: FieldSource
+  kind: FieldKind
+  /** `fixed` only: the value printed on every certificate. */
+  value?: string
+  /** `template` only: text with `{fieldId}` placeholders. */
+  pattern?: string
+  /** Blank values are an error rather than a warning. */
+  required?: boolean
+  /** Two certificates in a batch may not share this value. */
+  unique?: boolean
+  /** Printed before the value, for designs whose artwork does not include the label. */
+  drawnLabel?: string
+  /** Shown in the editor when no certificate is selected. */
+  placeholder?: string
+  /** Extra CSV header names recognised for this field, normalized. */
+  aliases?: string[]
 }
 
-export type RecipientTextKey = 'recipientName' | 'courseName' | 'courseStartDate' | 'certificateNumber' | 'courseDuration'
+/** One certificate design: its artwork, what data it takes and where that data is drawn. */
+export interface Preset extends TemplateConfig {
+  id: string
+  name: string
+  /** Path under the public folder, or a blob URL for a design being trialled. */
+  template: string
+  referenceSrc?: string
+  fields: FieldSpec[]
+  elements: TextElement[]
+  staticLines: StaticLine[]
+  /** Export file name, with `{fieldId}` placeholders. */
+  fileNameTemplate: string
+  /** Demo rows shown by "Load sample data". */
+  samples?: Record<FieldId, string>[]
+  /** True for presets that ship with the app; these can be reset rather than deleted. */
+  builtIn?: boolean
+}
+
+/** One certificate's worth of data. Keys are the preset's field ids. */
+export interface Recipient {
+  id: string
+  values: Record<FieldId, string>
+}
 
 export type FieldValues = Record<FieldId, string>
 
@@ -83,6 +136,8 @@ export interface ValidationIssue {
 
 export type ExportKind = 'pdf' | 'png' | 'zip'
 
+export type BatchFormat = 'png' | 'pdf'
+
 export interface ExportRecord {
   id: string
   at: number
@@ -92,9 +147,10 @@ export interface ExportRecord {
   bytes: number
   status: 'success' | 'error' | 'cancelled'
   message?: string
+  presetName?: string
 }
 
-export type Section = 'generator' | 'template' | 'recipients' | 'history'
+export type Section = 'generator' | 'presets' | 'template' | 'recipients' | 'history'
 
 export interface EditorView {
   /** 1 = fit the certificate to the workspace. */

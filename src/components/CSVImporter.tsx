@@ -1,33 +1,49 @@
-import { CircleAlert, FileSpreadsheet, TriangleAlert, Upload } from 'lucide-react'
+import { CircleAlert, ClipboardPaste, FileSpreadsheet, TriangleAlert, Upload } from 'lucide-react'
 import { useMemo, useRef, useState, type DragEvent } from 'react'
-import { autoMapColumns, parseCsvFile, rowToRecipient, type ColumnMapping, type ParsedCsv } from '../lib/csv'
+import {
+  autoMapColumns,
+  parseCsvFile,
+  parseCsvText,
+  rowToRecipient,
+  unmappedHeaders,
+  type ColumnMapping,
+  type ParsedCsv,
+} from '../lib/csv'
 import type { DateOrder } from '../lib/dates'
-import { fillMissingNumbers } from '../lib/numbering'
-import { COLUMNS, validateAll } from '../lib/recipients'
-import type { Recipient } from '../types'
+import { fillMissingNumbers, numberedField } from '../lib/numbering'
+import { columnsFor, validateAll } from '../lib/recipients'
+import type { Preset, Recipient } from '../types'
 import { Badge, Button, Field, Modal, SelectInput, Switch } from './ui'
 
 const PREVIEW_ROWS = 50
 
 interface Props {
   open: boolean
+  preset: Preset
   existing: Recipient[]
-  globalIssueDate: string
   onClose: () => void
   onImport: (recipients: Recipient[], mode: 'append' | 'replace', numbered: number) => void
   onSampleCsv: () => void
 }
 
-export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport, onSampleCsv }: Props) {
+export function CSVImporter({ open, preset, existing, onClose, onImport, onSampleCsv }: Props) {
   const [parsed, setParsed] = useState<ParsedCsv | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reading, setReading] = useState(false)
+  const [pasted, setPasted] = useState('')
   const [mapping, setMapping] = useState<ColumnMapping | null>(null)
   const [dateOrder, setDateOrder] = useState<DateOrder>('YMD')
   const [mode, setMode] = useState<'append' | 'replace'>('append')
-  const [autoNumber, setAutoNumber] = useState(true)
+  const [autoNumber, setAutoNumber] = useState(false)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+
+  const columns = useMemo(() => columnsFor(preset), [preset])
+  const numberField = useMemo(() => numberedField(preset), [preset])
+  const requiredIds = useMemo(
+    () => preset.fields.filter((f) => f.source === 'variable' && f.required).map((f) => f.id),
+    [preset],
+  )
 
   const reset = () => {
     setParsed(null)
@@ -38,7 +54,14 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
 
   const close = () => {
     reset()
+    setPasted('')
     onClose()
+  }
+
+  const accept = (result: ParsedCsv) => {
+    setParsed(result)
+    setMapping(autoMapColumns(result.headers, columns))
+    setMode(existing.length ? 'append' : 'replace')
   }
 
   const readFile = async (file: File | undefined) => {
@@ -46,10 +69,7 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
     setError(null)
     setReading(true)
     try {
-      const result = await parseCsvFile(file)
-      setParsed(result)
-      setMapping(autoMapColumns(result.headers))
-      setMode(existing.length ? 'append' : 'replace')
+      accept(await parseCsvFile(file))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setParsed(null)
@@ -58,18 +78,28 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
     }
   }
 
+  const readPasted = () => {
+    setError(null)
+    try {
+      accept(parseCsvText(pasted))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setParsed(null)
+    }
+  }
+
   const prepared = useMemo(() => {
     if (!parsed || !mapping) return null
-    const imported = parsed.rows.map((row) => rowToRecipient(row, mapping, dateOrder))
+    const imported = parsed.rows.map((row) => rowToRecipient(preset, row, mapping, dateOrder))
     const kept = mode === 'append' ? existing : []
     let numbered = 0
     let list = imported
-    if (autoNumber) {
-      const result = fillMissingNumbers([...kept, ...imported])
+    if (autoNumber && numberField) {
+      const result = fillMissingNumbers([...kept, ...imported], numberField)
       list = result.recipients.slice(kept.length)
       numbered = result.filled
     }
-    const issues = validateAll([...kept, ...list], globalIssueDate)
+    const issues = validateAll(preset, [...kept, ...list])
     let errors = 0
     let warnings = 0
     for (const r of list) {
@@ -78,8 +108,8 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
       if (rowIssues.some((i) => i.level === 'error')) errors++
       else warnings++
     }
-    return { list, issues, numbered, errors, warnings }
-  }, [parsed, mapping, dateOrder, mode, autoNumber, existing, globalIssueDate])
+    return { list, issues, numbered, errors, warnings, ignored: unmappedHeaders(parsed.headers, mapping) }
+  }, [parsed, mapping, dateOrder, mode, autoNumber, existing, preset, numberField])
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault()
@@ -87,20 +117,21 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
     void readFile(e.dataTransfer.files[0])
   }
 
-  const canImport = !!prepared && !!mapping?.recipientName && prepared.list.length > 0
+  const missingRequired = requiredIds.filter((id) => !mapping?.[id])
+  const canImport = !!prepared && missingRequired.length === 0 && prepared.list.length > 0
 
   return (
     <Modal
       open={open}
       size={parsed ? 'xl' : 'md'}
-      title="Import recipients from CSV"
-      description="The file is read in this browser and never uploaded."
+      title={`Add data for ${preset.name}`}
+      description="Everything is read in this browser and never uploaded."
       onClose={close}
       footer={
         parsed ? (
           <>
             <Button variant="ghost" className="mr-auto" onClick={reset}>
-              Choose another file
+              Start over
             </Button>
             <Button onClick={close}>Cancel</Button>
             <Button
@@ -112,7 +143,7 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
                 close()
               }}
             >
-              Import {prepared?.list.length ?? 0} recipients
+              Add {prepared?.list.length ?? 0} certificates
             </Button>
           </>
         ) : undefined
@@ -120,22 +151,38 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
     >
       {!parsed ? (
         <div className="space-y-4">
-          <div
-            onDragOver={(e) => {
-              e.preventDefault()
-              setDragging(true)
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-            className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors ${
-              dragging ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-slate-50'
-            }`}
+          <Field
+            group
+            label="Paste rows"
+            hint="Copy straight out of Excel or Sheets, including the header row. Commas or tabs both work."
           >
-            <FileSpreadsheet className="size-8 text-slate-400" />
-            <p className="mt-3 text-sm font-medium text-slate-700">Drop a CSV file here</p>
-            <p className="mt-1 text-xs text-slate-500">or</p>
-            <Button className="mt-2" icon={Upload} loading={reading} onClick={() => fileInput.current?.click()}>
-              Choose file
+            <textarea
+              value={pasted}
+              onChange={(e) => setPasted(e.target.value)}
+              rows={7}
+              spellCheck={false}
+              placeholder={`${columns.map((c) => c.label).join(',')}\n…`}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-xs shadow-xs focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
+            />
+          </Field>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="primary" icon={ClipboardPaste} disabled={!pasted.trim()} onClick={readPasted}>
+              Use pasted data
+            </Button>
+            <span className="text-xs text-slate-400">or</span>
+            <Button
+              icon={Upload}
+              loading={reading}
+              onClick={() => fileInput.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setDragging(true)
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+              className={dragging ? 'border-blue-400 bg-blue-50' : ''}
+            >
+              Choose a CSV file
             </Button>
             <input
               ref={fileInput}
@@ -154,8 +201,8 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
             </p>
           )}
           <p className="text-sm text-slate-600">
-            Expected columns: {COLUMNS.map((c) => c.label).join(', ')}. Other column names can be mapped in the next step.
-            Leave Issue Date empty to use the global issue date.{' '}
+            Expected columns: {columns.map((c) => c.label).join(', ')}. Other column names can be mapped in the next
+            step.{' '}
             <button type="button" className="font-medium text-blue-700 hover:underline" onClick={onSampleCsv}>
               Download a sample CSV
             </button>
@@ -187,50 +234,75 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
               </div>
             )}
 
+            {prepared.ignored.length > 0 && (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Ignored {prepared.ignored.length === 1 ? 'column' : 'columns'}: {prepared.ignored.join(', ')}. This
+                design does not use {prepared.ignored.length === 1 ? 'it' : 'them'}, or the value is set once in the
+                preset.
+              </p>
+            )}
+
             <div>
               <h3 className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">Column mapping</h3>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-                {COLUMNS.map((column) => (
-                  <Field key={column.key} label={column.label + (column.key === 'recipientName' ? ' *' : '')}>
-                    <SelectInput
-                      value={mapping[column.key]}
-                      onChange={(e) => setMapping({ ...mapping, [column.key]: e.target.value })}
-                      className={!mapping[column.key] && column.key === 'recipientName' ? 'border-red-400' : ''}
-                    >
-                      <option value="">{column.key === 'issueDate' ? 'Use global date' : '— Not in file —'}</option>
-                      {parsed.headers.map((h) => (
-                        <option key={h} value={h}>
-                          {h}
-                        </option>
-                      ))}
-                    </SelectInput>
-                  </Field>
-                ))}
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                {columns.map((column) => {
+                  const required = requiredIds.includes(column.key)
+                  return (
+                    <Field key={column.key} label={column.label + (required ? ' *' : '')}>
+                      <SelectInput
+                        value={mapping[column.key] ?? ''}
+                        onChange={(e) => setMapping({ ...mapping, [column.key]: e.target.value })}
+                        className={!mapping[column.key] && required ? 'border-red-400' : ''}
+                      >
+                        <option value="">— Not in data —</option>
+                        {parsed.headers.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    </Field>
+                  )
+                })}
               </div>
+              {missingRequired.length > 0 && (
+                <p className="mt-2 text-xs text-red-600">
+                  Map a column for: {missingRequired.map((id) => columns.find((c) => c.key === id)?.label).join(', ')}.
+                </p>
+              )}
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
-              <Field label="Dates in this file" hint="ISO dates (2026-04-23) are always accepted.">
+              <Field label="Dates in this data" hint="ISO dates (2026-04-23) are always accepted.">
                 <SelectInput value={dateOrder} onChange={(e) => setDateOrder(e.target.value as DateOrder)}>
                   <option value="YMD">YYYY-MM-DD</option>
                   <option value="DMY">DD/MM/YYYY</option>
                   <option value="MDY">MM/DD/YYYY</option>
                 </SelectInput>
               </Field>
-              <Field label="Existing recipients" hint={existing.length ? `${existing.length} in the list now.` : 'The list is empty.'}>
-                <SelectInput value={mode} onChange={(e) => setMode(e.target.value as 'append' | 'replace')} disabled={!existing.length}>
-                  <option value="append">Keep and add imported rows</option>
-                  <option value="replace">Replace with imported rows</option>
+              <Field
+                label="Existing rows"
+                hint={existing.length ? `${existing.length} in the list now.` : 'The list is empty.'}
+              >
+                <SelectInput
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as 'append' | 'replace')}
+                  disabled={!existing.length}
+                >
+                  <option value="append">Keep and add these rows</option>
+                  <option value="replace">Replace with these rows</option>
                 </SelectInput>
               </Field>
-              <div className="pt-5">
-                <Switch
-                  checked={autoNumber}
-                  onChange={setAutoNumber}
-                  label="Number rows without a certificate number"
-                  description="Empty rows get an 8-character code. Numbers already in the file are kept."
-                />
-              </div>
+              {numberField && (
+                <div className="pt-5">
+                  <Switch
+                    checked={autoNumber}
+                    onChange={setAutoNumber}
+                    label="Generate missing numbers"
+                    description="Off by default: numbers you supply are kept exactly, so re-running a batch reproduces them."
+                  />
+                </div>
+              )}
             </div>
 
             <div>
@@ -242,7 +314,7 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
                   <thead className="sticky top-0 bg-slate-50 text-slate-500">
                     <tr>
                       <th className="px-3 py-2 font-medium">#</th>
-                      {COLUMNS.map((c) => (
+                      {columns.map((c) => (
                         <th key={c.key} className="px-3 py-2 font-medium">
                           {c.label}
                         </th>
@@ -253,27 +325,22 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
                   <tbody className="divide-y divide-slate-100">
                     {prepared.list.slice(0, PREVIEW_ROWS).map((r, i) => {
                       const issues = prepared.issues.get(r.id) ?? []
-                      const bad = (field: string) => issues.find((issue) => issue.field === field)
-                      const cell = (field: string, value: string) => {
-                        const issue = bad(field)
-                        return (
-                          <td
-                            className={`px-3 py-1.5 ${issue ? (issue.level === 'error' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700') : 'text-slate-700'}`}
-                            title={issue?.message}
-                          >
-                            {value || <span className="text-slate-400">—</span>}
-                          </td>
-                        )
-                      }
                       return (
                         <tr key={r.id}>
                           <td className="px-3 py-1.5 text-slate-400">{i + 1}</td>
-                          {cell('recipientName', r.recipientName)}
-                          {cell('courseName', r.courseName)}
-                          {cell('courseStartDate', r.courseStartDate)}
-                          {cell('certificateNumber', r.certificateNumber)}
-                          {cell('courseDuration', r.courseDuration)}
-                          {cell('issueDate', r.issueDateOverride ?? 'Global')}
+                          {columns.map((c) => {
+                            const issue = issues.find((x) => x.field === c.key)
+                            const value = r.values[c.key] ?? ''
+                            return (
+                              <td
+                                key={c.key}
+                                className={`px-3 py-1.5 ${issue ? (issue.level === 'error' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700') : 'text-slate-700'}`}
+                                title={issue?.message}
+                              >
+                                {value || <span className="text-slate-400">—</span>}
+                              </td>
+                            )
+                          })}
                           <td className="px-3 py-1.5">
                             {issues.some((x) => x.level === 'error') ? (
                               <Badge tone="red">Error</Badge>
@@ -290,7 +357,8 @@ export function CSVImporter({ open, existing, globalIssueDate, onClose, onImport
                 </table>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                Rows with errors can still be imported and fixed in the table afterwards. Batch export stays disabled until they are fixed.
+                Rows with errors can still be added and fixed in the table afterwards. Batch export stays disabled until
+                they are fixed.
               </p>
             </div>
           </div>

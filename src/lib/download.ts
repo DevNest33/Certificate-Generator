@@ -1,4 +1,5 @@
-import type { Recipient } from '../types'
+import type { FieldValues, Preset, Recipient } from '../types'
+import { interpolate } from './recipients'
 
 export function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob)
@@ -24,10 +25,19 @@ export function safeFileName(value: string, fallback: string): string {
   return cleaned || fallback
 }
 
-export function certificateFileName(recipient: Recipient, index: number, extension: string): string {
-  const number = safeFileName(recipient.certificateNumber, String(index + 1).padStart(3, '0'))
-  const name = safeFileName(recipient.recipientName, 'recipient')
-  return `${number}_${name}.${extension}`
+/** Builds the export name from the preset's `fileNameTemplate`, using raw (unlabelled) values. */
+export function certificateFileName(
+  preset: Preset,
+  recipient: Recipient,
+  index: number,
+  extension: string,
+): string {
+  const raw: FieldValues = {}
+  for (const spec of preset.fields) {
+    raw[spec.id] = spec.source === 'fixed' ? (spec.value ?? '') : (recipient.values[spec.id] ?? '')
+  }
+  const stem = interpolate(preset.fileNameTemplate, raw).replace(/\s*_\s*/g, '_')
+  return `${safeFileName(stem, String(index + 1).padStart(3, '0'))}.${extension}`
 }
 
 /** Appends -2, -3, … so two entries in a ZIP never share a name. */

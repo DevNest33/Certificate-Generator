@@ -1,4 +1,6 @@
-import type { TextAlign, TextElement } from '../types'
+import type { LaidOutText, TextAlign, TextElement } from '../types'
+
+export type { LaidOutText }
 
 /**
  * Distance from the baseline to the vertical middle of capital letters, as a fraction of the font size.
@@ -21,22 +23,6 @@ export interface TextLine {
   x: number
   baseline: number
 }
-
-/** Geometry and style shared by recipient fields and the fixed lines drawn on every certificate. */
-export type LaidOutText = Pick<
-  TextElement,
-  | 'x'
-  | 'y'
-  | 'width'
-  | 'height'
-  | 'align'
-  | 'fontFamily'
-  | 'fontSize'
-  | 'fontWeight'
-  | 'color'
-  | 'letterSpacing'
-  | 'shrinkToFit'
-> & { id: string }
 
 export interface TextRun {
   id: string
@@ -109,20 +95,57 @@ function measurer(): CanvasRenderingContext2D {
 }
 
 /**
+ * Greedy word wrap at the box width. A single word that is still too wide is left alone;
+ * shrink-to-fit deals with it afterwards.
+ */
+function wrapToWidth(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  letterSpacing: number,
+  available: number,
+): string[] {
+  const wrapped: string[] = []
+  for (const line of lines) {
+    const words = line.split(/\s+/).filter(Boolean)
+    if (!words.length) {
+      wrapped.push('')
+      continue
+    }
+    let current = words[0]
+    for (const word of words.slice(1)) {
+      const candidate = `${current} ${word}`
+      if (measureRun(ctx, candidate, letterSpacing) <= available) current = candidate
+      else {
+        wrapped.push(current)
+        current = word
+      }
+    }
+    wrapped.push(current)
+  }
+  return wrapped
+}
+
+/**
  * Positions one text element on a certificate rendered at `width` × `height`.
- * Shrink-to-fit is computed at the template's design size, so every render size shrinks text identically.
+ * Wrapping and shrink-to-fit are computed at the template's design size, so every
+ * render size breaks and shrinks text identically.
  */
 export function layoutText(el: LaidOutText, text: string, width: number, height: number, designWidth: number): TextRun {
   const ctx = measurer()
   const scale = width / designWidth
   const box = elementBox(el, width, height)
+  const available = el.width * designWidth
 
-  const rawLines = text ? text.split('\n') : []
+  let rawLines = text ? text.split('\n') : []
+  if (rawLines.length && el.wrap) {
+    ctx.font = cssFont(el, el.fontSize)
+    rawLines = wrapToWidth(ctx, rawLines, el.letterSpacing, available)
+  }
+
   let fit = 1
   if (rawLines.length && el.shrinkToFit) {
     ctx.font = cssFont(el, el.fontSize)
     const natural = Math.max(...rawLines.map((line) => measureRun(ctx, line, el.letterSpacing)))
-    const available = el.width * designWidth
     if (natural > available) fit = available / natural
   }
 

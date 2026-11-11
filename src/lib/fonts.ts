@@ -16,6 +16,12 @@ export const FONT_OPTIONS: FontOption[] = [
   { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
   { label: 'Garamond', value: 'Garamond, "EB Garamond", Georgia, serif' },
   { label: 'Courier New', value: '"Courier New", Courier, monospace' },
+  // Script faces for certificate names. Each falls back through the other scripts
+  // that commonly ship with Windows or Office before reaching generic cursive.
+  { label: 'Calligraphy', value: '"Edwardian Script ITC", "Palace Script MT", "Monotype Corsiva", Gabriola, cursive' },
+  { label: 'Corsiva', value: '"Monotype Corsiva", "Apple Chancery", "URW Chancery L", Gabriola, cursive' },
+  { label: 'Segoe Script', value: '"Segoe Script", "Bradley Hand", "Brush Script MT", cursive' },
+  { label: 'Brush Script', value: '"Brush Script MT", "Segoe Script", "Apple Chancery", cursive' },
 ]
 
 export const FONT_WEIGHTS = [

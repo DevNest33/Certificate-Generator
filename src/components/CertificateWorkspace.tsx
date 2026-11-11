@@ -4,7 +4,7 @@ import { useElementSize } from '../hooks/useElementSize'
 import type { CertificateScene } from '../lib/drawCertificate'
 import { centerHorizontally, realign } from '../lib/layout'
 import { stepZoom } from '../lib/zoom'
-import type { EditorView, FieldId, Recipient, TextElement, ValidationIssue } from '../types'
+import type { EditorView, FieldId, Preset, Recipient, TextElement, ValidationIssue } from '../types'
 import { CertificateCanvas } from './CertificateCanvas'
 import { EditorToolbar } from './EditorToolbar'
 import { RecipientPicker } from './RecipientPicker'
@@ -12,6 +12,7 @@ import { RecipientPicker } from './RecipientPicker'
 const PADDING = 32
 
 interface Props {
+  preset: Preset
   scene: CertificateScene | null
   templateError: string | null
   reference: HTMLImageElement | null
@@ -29,6 +30,7 @@ interface Props {
 }
 
 export function CertificateWorkspace({
+  preset,
   scene,
   templateError,
   reference,
@@ -123,7 +125,7 @@ export function CertificateWorkspace({
             ) : templateError ? (
               <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-3 text-sm text-red-700">
                 <TriangleAlert className="size-4" />
-                {templateError}. Check that public/certificate-template.png exists.
+                {templateError}. Check that public/{preset.template} exists.
               </div>
             ) : (
               <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -134,6 +136,7 @@ export function CertificateWorkspace({
         </div>
       </div>
       <RecipientPicker
+        preset={preset}
         recipients={recipients}
         current={previewRecipient}
         issues={previewIssues}

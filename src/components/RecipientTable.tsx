@@ -1,27 +1,25 @@
 import { ChevronLeft, ChevronRight, Eye, Trash } from 'lucide-react'
 import { memo, useMemo, useState, type ReactNode } from 'react'
 import { dateInputType, parseDate } from '../lib/dates'
-import { numberKey } from '../lib/numbering'
-import { validateRecipient } from '../lib/recipients'
-import type { DateFormat, FieldId, Recipient, ValidationIssue } from '../types'
-import { IssueDateControl } from './IssueDateControl'
+import { validateRecipient, variableFields } from '../lib/recipients'
+import type { FieldId, FieldSpec, Preset, Recipient, ValidationIssue } from '../types'
 import { IconButton, Tooltip, inputClass } from './ui'
 
 const PAGE_SIZE = 100
 
 interface TableProps {
+  preset: Preset
   recipients: Recipient[]
-  duplicates: Set<string>
-  globalIssueDate: string
-  dateFormat: DateFormat
+  duplicates: Map<FieldId, Set<string>>
   previewId: string | null
-  onChange: (id: string, patch: Partial<Recipient>) => void
+  onChange: (id: string, field: FieldId, value: string) => void
   onRemove: (id: string) => void
   onPreview: (id: string) => void
 }
 
-export function RecipientTable({ recipients, duplicates, globalIssueDate, dateFormat, previewId, onChange, onRemove, onPreview }: TableProps) {
+export function RecipientTable({ preset, recipients, duplicates, previewId, onChange, onRemove, onPreview }: TableProps) {
   const [page, setPage] = useState(0)
+  const fields = useMemo(() => variableFields(preset), [preset])
   const pageCount = Math.max(1, Math.ceil(recipients.length / PAGE_SIZE))
   const current = Math.min(page, pageCount - 1)
   const start = current * PAGE_SIZE
@@ -30,27 +28,28 @@ export function RecipientTable({ recipients, duplicates, globalIssueDate, dateFo
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[1080px] border-separate border-spacing-0 text-sm">
+        <table className="w-full border-separate border-spacing-0 text-sm" style={{ minWidth: `${220 + fields.length * 170}px` }}>
           <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs font-medium text-slate-500">
             <tr>
-              {['#', 'Recipient Name', 'Course Name', 'Course Start Date', 'Certificate Number', 'Course Duration', 'Issue Date', ''].map(
-                (label, i) => (
-                  <th key={i} className="border-b border-slate-200 px-2 py-2 font-medium first:pl-4 last:pr-4">
-                    {label}
-                  </th>
-                ),
-              )}
+              <th className="border-b border-slate-200 px-2 py-2 pl-4 font-medium">#</th>
+              {fields.map((f) => (
+                <th key={f.id} className="border-b border-slate-200 px-2 py-2 font-medium">
+                  {f.name}
+                  {f.required && <span className="ml-0.5 text-red-400">*</span>}
+                </th>
+              ))}
+              <th className="border-b border-slate-200 px-2 py-2 pr-4 font-medium" />
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
               <RecipientRow
                 key={r.id}
+                preset={preset}
+                fields={fields}
                 index={start + i}
                 recipient={r}
-                duplicate={duplicates.has(numberKey(r.certificateNumber))}
-                globalIssueDate={globalIssueDate}
-                dateFormat={dateFormat}
+                duplicates={duplicates}
                 active={r.id === previewId}
                 onChange={onChange}
                 onRemove={onRemove}
@@ -81,32 +80,29 @@ export function RecipientTable({ recipients, duplicates, globalIssueDate, dateFo
 }
 
 interface RowProps {
+  preset: Preset
+  fields: FieldSpec[]
   index: number
   recipient: Recipient
-  duplicate: boolean
-  globalIssueDate: string
-  dateFormat: DateFormat
+  duplicates: Map<FieldId, Set<string>>
   active: boolean
-  onChange: (id: string, patch: Partial<Recipient>) => void
+  onChange: (id: string, field: FieldId, value: string) => void
   onRemove: (id: string) => void
   onPreview: (id: string) => void
 }
 
 const RecipientRow = memo(function RecipientRow({
+  preset,
+  fields,
   index,
   recipient: r,
-  duplicate,
-  globalIssueDate,
-  dateFormat,
+  duplicates,
   active,
   onChange,
   onRemove,
   onPreview,
 }: RowProps) {
-  const issues = useMemo(
-    () => validateRecipient(r, duplicate ? new Set([numberKey(r.certificateNumber)]) : new Set(), globalIssueDate),
-    [r, duplicate, globalIssueDate],
-  )
+  const issues = useMemo(() => validateRecipient(preset, r, duplicates), [preset, r, duplicates])
   const issueFor = (field: FieldId) => issues.find((i) => i.field === field)
   const hasError = issues.some((i) => i.level === 'error')
 
@@ -115,35 +111,24 @@ const RecipientRow = memo(function RecipientRow({
       <td className={`border-b border-slate-100 py-1.5 pr-2 pl-4 text-xs tabular-nums ${hasError ? 'text-red-600' : 'text-slate-400'}`}>
         {index + 1}
       </td>
-      <Cell issue={issueFor('recipientName')}>
-        <TextCell value={r.recipientName} issue={issueFor('recipientName')} placeholder="Full name" onChange={(v) => onChange(r.id, { recipientName: v })} />
-      </Cell>
-      <Cell issue={issueFor('courseName')}>
-        <TextCell value={r.courseName} issue={issueFor('courseName')} placeholder="Course name" onChange={(v) => onChange(r.id, { courseName: v })} />
-      </Cell>
-      <Cell issue={issueFor('courseStartDate')} width="w-40">
-        <DateCell value={r.courseStartDate} issue={issueFor('courseStartDate')} onChange={(v) => onChange(r.id, { courseStartDate: v })} />
-      </Cell>
-      <Cell issue={issueFor('certificateNumber')} width="w-44">
-        <TextCell
-          value={r.certificateNumber}
-          issue={issueFor('certificateNumber')}
-          placeholder="fd823741"
-          onChange={(v) => onChange(r.id, { certificateNumber: v })}
-        />
-      </Cell>
-      <Cell issue={issueFor('courseDuration')} width="w-32">
-        <TextCell value={r.courseDuration} issue={issueFor('courseDuration')} placeholder="6 hours" onChange={(v) => onChange(r.id, { courseDuration: v })} />
-      </Cell>
-      <Cell issue={issueFor('issueDate')} width="w-48">
-        <IssueDateControl
-          compact
-          override={r.issueDateOverride}
-          globalIssueDate={globalIssueDate}
-          dateFormat={dateFormat}
-          onChange={(issueDateOverride) => onChange(r.id, { issueDateOverride })}
-        />
-      </Cell>
+      {fields.map((f) => {
+        const issue = issueFor(f.id)
+        const value = r.values[f.id] ?? ''
+        return (
+          <Cell key={f.id} issue={issue} width={f.kind === 'date' ? 'w-40' : undefined}>
+            {f.kind === 'date' ? (
+              <DateCell value={value} issue={issue} onChange={(v) => onChange(r.id, f.id, v)} />
+            ) : (
+              <TextCell
+                value={value}
+                issue={issue}
+                placeholder={f.placeholder ?? f.name}
+                onChange={(v) => onChange(r.id, f.id, v)}
+              />
+            )}
+          </Cell>
+        )
+      })}
       <td className="border-b border-slate-100 py-1.5 pr-4 pl-2">
         <div className="flex justify-end">
           <IconButton label="Preview this certificate" icon={Eye} active={active} onClick={() => onPreview(r.id)} tooltipAlign="end" />

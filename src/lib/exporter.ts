@@ -1,3 +1,4 @@
+import type { BatchFormat } from '../types'
 import { drawCertificate, type CertificateScene } from './drawCertificate'
 
 /** Export resolution relative to the template's own pixel size. */
@@ -83,10 +84,11 @@ function yieldToBrowser(): Promise<void> {
   })
 }
 
-/** Renders one PDF per item, one at a time, and bundles them into a ZIP. */
+/** Renders one certificate per item, one at a time, and bundles them into a ZIP. */
 export async function renderZip(
   count: number,
   itemAt: (index: number) => BatchItem,
+  format: BatchFormat,
   onProgress: (done: number) => void,
   signal: AbortSignal,
 ): Promise<Blob> {
@@ -95,11 +97,11 @@ export async function renderZip(
   for (let i = 0; i < count; i++) {
     signal.throwIfAborted()
     const item = itemAt(i)
-    zip.file(item.fileName, await renderPdf(item.scene, item.title))
+    zip.file(item.fileName, format === 'pdf' ? await renderPdf(item.scene, item.title) : await renderPng(item.scene))
     onProgress(i + 1)
     await yieldToBrowser()
   }
   signal.throwIfAborted()
-  // PDFs already hold compressed JPEG data, so storing them uncompressed is faster and barely larger.
+  // Both PNG and PDF-wrapped JPEG are already compressed, so storing them is faster and barely larger.
   return zip.generateAsync({ type: 'blob', compression: 'STORE' })
 }

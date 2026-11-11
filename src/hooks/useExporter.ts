@@ -2,8 +2,8 @@ import { useCallback, useRef, useState } from 'react'
 import type { CertificateScene } from '../lib/drawCertificate'
 import { certificateFileName, downloadBlob, formatBytes, uniqueFileName } from '../lib/download'
 import { renderPdf, renderPng, renderZip } from '../lib/exporter'
-import { newId } from '../lib/recipients'
-import type { ExportKind, ExportRecord, Recipient } from '../types'
+import { newId, recipientLabel } from '../lib/recipients'
+import type { BatchFormat, ExportKind, ExportRecord, Preset, Recipient } from '../types'
 import type { ToastTone } from './useToasts'
 
 export interface ExportJob {
@@ -14,20 +14,22 @@ export interface ExportJob {
 }
 
 interface Options {
+  preset: Preset
   sceneFor: (recipient: Recipient) => CertificateScene | null
   notify: (tone: ToastTone, message: string) => void
   onRecord: (record: ExportRecord) => void
 }
 
-function titleFor(recipient: Recipient) {
-  return `Certificate – ${recipient.recipientName || 'Recipient'}${recipient.certificateNumber ? ` (${recipient.certificateNumber})` : ''}`
-}
-
-export function useExporter({ sceneFor, notify, onRecord }: Options) {
+export function useExporter({ preset, sceneFor, notify, onRecord }: Options) {
   const [job, setJob] = useState<ExportJob | null>(null)
   // A ref, not state, so a double click cannot start a second job before React re-renders.
   const busy = useRef(false)
   const abort = useRef<AbortController | null>(null)
+
+  const titleFor = useCallback(
+    (recipient: Recipient) => `${preset.name} - ${recipientLabel(preset, recipient)}`,
+    [preset],
+  )
 
   const run = useCallback(
     async (kind: ExportKind, total: number, fileName: string, work: (signal: AbortSignal) => Promise<Blob>) => {
@@ -36,7 +38,7 @@ export function useExporter({ sceneFor, notify, onRecord }: Options) {
       const controller = new AbortController()
       abort.current = controller
       setJob({ kind, done: 0, total, phase: 'rendering' })
-      const record = { id: newId(), at: Date.now(), kind, fileName, count: total }
+      const record = { id: newId(), at: Date.now(), kind, fileName, count: total, presetName: preset.name }
       try {
         await document.fonts?.ready
         const blob = await work(controller.signal)
@@ -58,39 +60,44 @@ export function useExporter({ sceneFor, notify, onRecord }: Options) {
         setJob(null)
       }
     },
-    [notify, onRecord],
+    [notify, onRecord, preset.name],
   )
 
   const exportSingle = useCallback(
     (kind: 'pdf' | 'png', recipient: Recipient, index: number) => {
       const scene = sceneFor(recipient)
       if (!scene) return
-      const fileName = certificateFileName(recipient, index, kind)
+      const fileName = certificateFileName(preset, recipient, index, kind)
       void run(kind, 1, fileName, async () => (kind === 'pdf' ? renderPdf(scene, titleFor(recipient)) : renderPng(scene)))
     },
-    [run, sceneFor],
+    [preset, run, sceneFor, titleFor],
   )
 
   const exportZip = useCallback(
-    (recipients: Recipient[], zipName: string) => {
+    (recipients: Recipient[], zipName: string, format: BatchFormat) => {
       const used = new Set<string>()
-      const fileNames = recipients.map((r, i) => uniqueFileName(certificateFileName(r, i, 'pdf'), used))
-      void run('zip', recipients.length, zipName, async (signal) => {
-        const blob = await renderZip(
+      const fileNames = recipients.map((r, i) => uniqueFileName(certificateFileName(preset, r, i, format), used))
+      void run('zip', recipients.length, zipName, async (signal) =>
+        renderZip(
           recipients.length,
           (i) => {
             const scene = sceneFor(recipients[i])
             if (!scene) throw new Error('The template is not loaded.')
             return { scene, fileName: fileNames[i], title: titleFor(recipients[i]) }
           },
+          format,
           (done) =>
-            setJob({ kind: 'zip', done, total: recipients.length, phase: done === recipients.length ? 'packaging' : 'rendering' }),
+            setJob({
+              kind: 'zip',
+              done,
+              total: recipients.length,
+              phase: done === recipients.length ? 'packaging' : 'rendering',
+            }),
           signal,
-        )
-        return blob
-      })
+        ),
+      )
     },
-    [run, sceneFor],
+    [preset, run, sceneFor, titleFor],
   )
 
   const cancel = useCallback(() => abort.current?.abort(), [])

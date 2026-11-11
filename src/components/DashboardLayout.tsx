@@ -1,11 +1,12 @@
-import { Award, LayoutTemplate, RotateCcwClock, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
+import { Award, LayoutTemplate, Layers, RotateCcwClock, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { Section } from '../types'
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'generator', label: 'Certificate Generator', icon: Award },
+  { id: 'presets', label: 'Presets', icon: Layers },
   { id: 'template', label: 'Template Settings', icon: LayoutTemplate },
-  { id: 'recipients', label: 'Recipient Data', icon: Users },
+  { id: 'recipients', label: 'Certificate Data', icon: Users },
   { id: 'history', label: 'Export History', icon: RotateCcwClock },
 ]
 
@@ -56,7 +57,7 @@ export function DashboardLayout({ section, onSectionChange, counts, header, asid
         </nav>
         <p className="mt-auto flex items-start gap-2 px-5 py-4 text-xs text-slate-500">
           <ShieldCheck className="mt-px size-3.5 shrink-0 text-emerald-600" />
-          Recipient data and templates stay in this browser.
+          Presets and certificate data stay in this browser.
         </p>
       </aside>
 
